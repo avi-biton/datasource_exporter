@@ -2,18 +2,18 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/rest"
 )
 
 // Define a struct for the collector that contains pointers
@@ -47,12 +47,7 @@ func (collector *dataSourceCollector) Collect(ch chan<- prometheus.Metric) {
 
 	var metricValue float64
 
-	grafanaResoruce := GetGrafanaResource()
-	if strings.Contains(grafanaResoruce, "prometheus-appstudio-ds") {
-		metricValue = 1
-	} else {
-		metricValue = 0
-	}
+	metricValue = IsDataSourceExist(GetDataSources(GetGrafanaResource()), "prometheus-appstudio-ds")
 
 	//Write latest value for the metric in the prometheus metric channel.
 	m1 := prometheus.MustNewConstMetric(collector.dsLiveMetric, prometheus.GaugeValue, metricValue)
@@ -60,9 +55,9 @@ func (collector *dataSourceCollector) Collect(ch chan<- prometheus.Metric) {
 	ch <- m1
 }
 
-// get the grafna resource
-func GetGrafanaResource() string {
-	clientset := ClusterConfig()
+// get the grafna resource as a map
+func GetGrafanaResource() map[string]interface{} {
+	clientset := NewKubeClient()
 
 	data, err := clientset.RESTClient().
 		Get().
@@ -71,53 +66,70 @@ func GetGrafanaResource() string {
 		Resource("grafanas").
 		Name("grafana-oauth").
 		DoRaw(context.TODO())
-	grafanaResoruce := string(data)
-	fmt.Printf(grafanaResoruce)
+	var grafanaResoruce map[string]interface{}
+	err = json.Unmarshal(data, &grafanaResoruce)
 	if err != nil {
 		fmt.Printf("Error getting resource: %v\n", err)
 		os.Exit(1)
 	}
+
 	return grafanaResoruce
 }
 
-func ClusterConfig() *kubernetes.Clientset {
-	//creates in cluster config
-	userHomeDir, err := os.UserHomeDir()
-	if err != nil {
-		fmt.Printf("error getting user home dir: %v\n", err)
-		os.Exit(1)
+// get datasources from grafana resource
+func GetDataSources(grafanaResource map[string]interface{}) []string {
+	// return empty string slice if datasources are not defined
+	if grafanaResource["status"].(map[string]any)["datasources"] == nil {
+		return make([]string, 0)
 	}
-	kubeConfigPath := filepath.Join(userHomeDir, ".kube", "config")
-	fmt.Printf("Using kubeconfig: %s\n", kubeConfigPath)
-
-	kubeConfig, err := clientcmd.BuildConfigFromFlags("", kubeConfigPath)
-	if err != nil {
-		fmt.Printf("Error getting kubernetes config: %v\n", err)
-		os.Exit(1)
+	datasourcesIfc := grafanaResource["status"].(map[string]any)["datasources"].([]interface{})
+	datasources := make([]string, len(datasourcesIfc))
+	for i, v := range datasourcesIfc {
+		datasources[i] = v.(string)
 	}
+	return datasources
+}
 
-	clientset, err := kubernetes.NewForConfig(kubeConfig)
+// check if datasource exists, return 1 if yes, 0 if not
+func IsDataSourceExist(datasources []string, dsToCheck string) float64 {
+	for _, datasource := range datasources {
+		if strings.Contains(datasource, dsToCheck) {
+			fmt.Println("Datasource", datasource, "exists")
+			return 1
+		}
+	}
+	fmt.Println("Datasource", dsToCheck, "does not exist")
+	return 0
+}
 
+func NewKubeClient() *kubernetes.Clientset {
+	// creates the in-cluster config
+	config, err := rest.InClusterConfig()
 	if err != nil {
-		fmt.Printf("error getting kubernetes config: %v\n", err)
-		os.Exit(1)
+		panic(err.Error())
+	}
+	// creates the clientset
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		panic(err.Error())
 	}
 	return clientset
 }
 
 func main() {
+
+	fmt.Println("Start datasource exporter")
 	reg := prometheus.NewPedanticRegistry()
 	dsc := newDataSourceCollector()
 	reg.MustRegister(dsc)
 
-	http.Handle("/datasource-exporter/metrics", promhttp.HandlerFor(
+	http.Handle("/metrics", promhttp.HandlerFor(
 		reg,
 		promhttp.HandlerOpts{
 			EnableOpenMetrics: true,
 			Registry:          reg,
 		},
 	))
-	fmt.Printf("Start datasource exporter")
 	log.Fatal(http.ListenAndServe(":9101", nil))
 
 }

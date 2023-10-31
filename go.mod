@@ -6,7 +6,7 @@ require github.com/prometheus/client_golang v1.17.0
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/emicklei/go-restful/v3 v3.9.0 // indirect
+	github.com/emicklei/go-restful/v3 v3.11.0 // indirect
 	github.com/go-logr/logr v1.2.4 // indirect
 	github.com/go-openapi/jsonpointer v0.19.6 // indirect
 	github.com/go-openapi/jsonreference v0.20.2 // indirect
@@ -54,4 +54,5 @@ require (
 	golang.org/x/sys v0.13.0 // indirect
 	google.golang.org/protobuf v1.31.0 // indirect
 	k8s.io/client-go v0.28.3
+	sigs.k8s.io/controller-runtime v0.16.3
 )

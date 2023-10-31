@@ -1,0 +1,52 @@
+# Service account to run the exporter
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sa-exporter
+  namespace: appstudio-grafana
+---
+# ClusterRole to get access to Grafana resources
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: exporter-role
+rules:
+- apiGroups: ['grafana.integreatly.org']
+  resources: ['grafanas']
+  verbs: ['get']
+---
+# Bind the ClusterRole to the Service account, giving aceess only to appstudio-grafana namespace
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: exporter-role-binding
+  namespace: appstudio-grafana
+subjects:
+- kind: ServiceAccount
+  name: sa-exporter
+  namespace: appstudio-grafana
+roleRef:
+  kind: ClusterRole
+  name: exporter-role
+  apiGroup: rbac.authorization.k8s.io
+---
+# Create a Pod from the datasource-exporter image using the service-account
+apiVersion: v1
+kind: Pod
+metadata:
+  name: datasource-exporter
+  namespace: appstudio-grafana
+spec:
+  restartPolicy: Never
+  containers:
+    - name: datasource-exporter
+      image: 'quay.io/abiton1/datasource-exporter:latest'
+      ports:
+        - containerPort: 9101
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL    
+  serviceAccountName: sa-exporter
+  
