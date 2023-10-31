@@ -110,13 +110,14 @@ func main() {
 	dsc := newDataSourceCollector()
 	reg.MustRegister(dsc)
 
-	http.Handle("/metrics", promhttp.HandlerFor(
+	http.Handle("/datasource-exporter/metrics", promhttp.HandlerFor(
 		reg,
 		promhttp.HandlerOpts{
 			EnableOpenMetrics: true,
 			Registry:          reg,
 		},
 	))
+	fmt.Printf("Start datasource exporter")
 	log.Fatal(http.ListenAndServe(":9101", nil))
 
 }
